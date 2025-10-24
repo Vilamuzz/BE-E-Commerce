@@ -52,21 +52,6 @@ class DatabaseSeeder extends Seeder
             'is_deleted' => false
         ]);
 
-        // // Create 10 random users
-        // $timestamp = time();
-        // for ($i = 1; $i <= 10; $i++) {
-        //     User::factory()->create([
-        //         'username' => 'user'.$i.'_'.$timestamp,
-        //         'name' => 'Random User '.$i,
-        //         'email' => 'user'.$i.'_'.$timestamp.'@example.com',
-        //         'password' => Hash::make('password'),
-        //         'role' => User::ROLE_USER,
-        //         'no_hp' => '08123456'.str_pad((7892 + $i), 4, '0', STR_PAD_LEFT),
-        //         'tanggal_lahir' => date('Y-m-d', strtotime('1990-01-01 + '.$i.' years')),
-        //         'is_verified' => true,
-        //         'is_active' => true,
-        //         'is_deleted' => false
-        //     ]);
-        // }
+        $this->call(IndoRegionSeeder::class);
     }
 }
