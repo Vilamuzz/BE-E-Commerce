@@ -1,9 +1,8 @@
 <?php
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
 use App\Http\Controllers\RegionController;
 use App\Http\Controllers\User\TokoController;
 use App\Http\Controllers\User\UserController;
@@ -30,114 +29,26 @@ use App\Http\Controllers\Admin\PesananManagementController;
 use App\Http\Controllers\User\PengajuanPencairanController;
 use App\Http\Controllers\Admin\KomplainManagementController;
 
-// Debug endpoint for checking auth status
-Route::middleware('auth:sanctum')->get('/auth-check', function (Request $request) {
-    $user = auth()->user();
-    return response()->json([
-        'authenticated' => true,
-        'user' => [
-            'id_user' => $user->id_user,
-            'email' => $user->email,
-            'role' => $user->role_name
-        ]
-    ]);
-});
-
-// Auth routes are imported from another file
+// Auth routes
 require __DIR__ . '/auth.php';
 
-// Broadcasting authentication - make sure this works properly
+// Broadcasting authentication
 Route::post('/broadcasting/auth', function (Request $request) {
-    try {
-        Log::info('Broadcasting auth request received', [
-            'has_auth_header' => $request->hasHeader('Authorization'),
-            'has_cookie' => $request->hasHeader('Cookie'),
-            'has_csrf_token' => $request->hasHeader('X-XSRF-TOKEN'),
-            'session_id' => session()->getId(),
-            'auth_check' => auth()->check(),
-            'user_id' => auth()->check() ? auth()->user()->id_user : null,
-            'body' => $request->all(),
-            'cookies' => $request->cookies->all(),
-            'headers' => [
-                'cookie' => $request->header('Cookie'),
-                'authorization' => $request->header('Authorization'),
-                'x-xsrf-token' => $request->header('X-XSRF-TOKEN'),
-                'user-agent' => $request->header('User-Agent'),
-                'referer' => $request->header('Referer'),
-                'origin' => $request->header('Origin'),
-            ]
-        ]);
-
-        // Start the session manually if needed
-        if (!session()->isStarted()) {
-            session()->start();
-        }
-
-        // First check if user is authenticated
-        if (!auth()->check()) {
-            Log::warning('User not authenticated for broadcasting', [
-                'session_id' => session()->getId(),
-                'session_data' => session()->all(),
-                'guard' => config('auth.defaults.guard'),
-                'provider' => config('auth.defaults.provider')
-            ]);
-
-            return response()->json([
-                'error' => 'Unauthenticated',
-                'message' => 'User session not found or expired',
-                'debug' => [
-                    'session_id' => session()->getId(),
-                    'session_started' => session()->isStarted(),
-                    'has_cookies' => !empty($request->cookies->all())
-                ]
-            ], 401);
-        }
-
-        $user = auth()->user();
-        Log::info('User authenticated for broadcasting', [
-            'user_id' => $user->id_user,
-            'user_name' => $user->name
-        ]);
-
-        // Use Laravel's built-in broadcast auth
-        $result = \Illuminate\Support\Facades\Broadcast::auth($request);
-        Log::info('Broadcast auth successful', ['result' => $result]);
-
-        return $result;
-    } catch (\Exception $e) {
-        Log::error('Broadcasting auth exception', [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-            'line' => $e->getLine(),
-            'file' => $e->getFile()
-        ]);
-
-        return response()->json([
-            'error' => 'Authentication failed',
-            'message' => $e->getMessage(),
-            'debug' => config('app.debug') ? [
-                'exception' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine()
-            ] : null
-        ], 403);
+    if (!Auth::check()) {
+        return response()->json(['error' => 'Unauthenticated'], 401);
     }
-})->middleware(['auth:sanctum'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+    return \Illuminate\Support\Facades\Broadcast::auth($request);
+})->middleware(['auth:api'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
 
 // Public routes - no auth required
 Route::prefix('toko')->group(function () {
-    // Public store access by slug
     Route::get('/slug/{slug}', [TokoController::class, 'getBySlug']);
 });
 
 // Public Product Routes
 Route::get('/featured-products', [BarangController::class, 'getFeaturedProducts']);
 Route::get('/recommended-products', [BarangController::class, 'getRecommendedProducts']);
-
-// Add a public kategori endpoint for the frontend
 Route::get('/kategori', [KategoriController::class, 'index']);
-
-// Public product catalog routes
 Route::get('/products', [BarangController::class, 'getPublicProducts']);
 Route::get('/products/{slug}', [BarangController::class, 'getPublicProductBySlug']);
 
@@ -150,7 +61,7 @@ Route::get('/districts/{id}/villages', [RegionController::class, 'getVillages'])
 // Public Midtrans notification callback
 Route::post('/payments/callback', [TagihanController::class, 'callback']);
 
-// Location routes (public)
+// Location routes
 Route::prefix('location')->group(function () {
     Route::get('/provinces', [LocationController::class, 'getProvinces']);
     Route::get('/regencies/{province_id}', [LocationController::class, 'getRegencies']);
@@ -167,10 +78,10 @@ Route::prefix('store')->group(function () {
 });
 
 // Protected routes - require authentication
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware('auth:api')->group(function () {
     // User profile
     Route::get('/user/profile', [UserController::class, 'getCurrentUser']);
-    Route::get('/auth/me', [UserController::class, 'getCurrentUser']); // Alternative endpoint
+    Route::get('/auth/me', [UserController::class, 'getCurrentUser']);
 
     // Notification routes
     Route::prefix('notifications')->group(function () {
@@ -179,24 +90,19 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/recent-unread', [App\Http\Controllers\User\NotificationController::class, 'getRecentUnread']);
         Route::post('/{id}/read', [App\Http\Controllers\User\NotificationController::class, 'markAsRead']);
         Route::post('/mark-all-read', [App\Http\Controllers\User\NotificationController::class, 'markAllAsRead']);
-        Route::post('/test', [App\Http\Controllers\User\NotificationController::class, 'testNotification']); // ADD THIS LINE
+        Route::post('/test', [App\Http\Controllers\User\NotificationController::class, 'testNotification']);
     });
 
-    // Toko (Store) management for regular users
-    Route::prefix('toko')->group(function (): void {
-        // Get my store (based on authenticated user)
+    // Toko (Store) management
+    Route::prefix('toko')->group(function () {
         Route::get('/my-store', [TokoController::class, 'getMyStore']);
-
-        // Get store by ID (when ID is known)
         Route::get('/{id}', [TokoController::class, 'getById'])->where('id', '[0-9]+');
-
-        // Store CRUD operations
         Route::post('/', [TokoController::class, 'store']);
         Route::put('/', [TokoController::class, 'update']);
         Route::delete('/', [TokoController::class, 'destroy']);
     });
 
-    // Barang (Product) management for users
+    // Barang (Product) management
     Route::prefix('barang')->group(function () {
         Route::get('/', [BarangController::class, 'index']);
         Route::post('/', [BarangController::class, 'store']);
@@ -207,7 +113,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/slug/{slug}', [BarangController::class, 'destroyBySlug']);
         Route::delete('/{id}', [BarangController::class, 'destroy'])->where('id', '[0-9]+');
 
-        // Update to support both ID and slug-based parent routes
+        // Product images
         Route::get('/{id_barang}/gambar', [GambarBarangController::class, 'index'])->where('id_barang', '[0-9]+');
         Route::get('/slug/{slug}/gambar', [GambarBarangController::class, 'indexByBarangSlug']);
         Route::post('/{id_barang}/gambar', [GambarBarangController::class, 'store'])->where('id_barang', '[0-9]+');
@@ -215,24 +121,28 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{id_barang}/gambar/{id_gambar}', [GambarBarangController::class, 'update'])->where('id_barang', '[0-9]+');
         Route::put('/slug/{slug}/gambar/{id_gambar}', [GambarBarangController::class, 'updateByBarangSlug']);
         Route::delete('/{id_barang}/gambar/{id_gambar}', [GambarBarangController::class, 'destroy'])->where('id_barang', '[0-9]+');
-        Route::delete('/slug/{slug}/gambar/{id_gambar}', [GambarBarangController::class, 'destroyByBarangSlug']); // Add this line
+        Route::delete('/slug/{slug}/gambar/{id_gambar}', [GambarBarangController::class, 'destroyByBarangSlug']);
     });
 
     // User Address Management
-    Route::get('/user/addresses', [AlamatUserController::class, 'index']);
-    Route::get('/user/addresses/{id}', [AlamatUserController::class, 'show']);
-    Route::post('/user/addresses', [AlamatUserController::class, 'store']);
-    Route::put('/user/addresses/{id}', [AlamatUserController::class, 'update']);
-    Route::delete('/user/addresses/{id}', [AlamatUserController::class, 'destroy']);
-    Route::put('/user/addresses/{id}/primary', [AlamatUserController::class, 'setPrimary']);
+    Route::prefix('user/addresses')->group(function () {
+        Route::get('/', [AlamatUserController::class, 'index']);
+        Route::get('/{id}', [AlamatUserController::class, 'show']);
+        Route::post('/', [AlamatUserController::class, 'store']);
+        Route::put('/{id}', [AlamatUserController::class, 'update']);
+        Route::delete('/{id}', [AlamatUserController::class, 'destroy']);
+        Route::put('/{id}/primary', [AlamatUserController::class, 'setPrimary']);
+    });
 
     // Store Address Management
-    Route::get('/toko/addresses', [AlamatTokoController::class, 'index']);
-    Route::get('/toko/addresses/{id}', [AlamatTokoController::class, 'show']);
-    Route::post('/toko/addresses', [AlamatTokoController::class, 'store']);
-    Route::put('/toko/addresses/{id}', [AlamatTokoController::class, 'update']);
-    Route::delete('/toko/addresses/{id}', [AlamatTokoController::class, 'destroy']);
-    Route::patch('/toko/addresses/{id}/primary', [AlamatTokoController::class, 'setPrimary']);
+    Route::prefix('toko/addresses')->group(function () {
+        Route::get('/', [AlamatTokoController::class, 'index']);
+        Route::get('/{id}', [AlamatTokoController::class, 'show']);
+        Route::post('/', [AlamatTokoController::class, 'store']);
+        Route::put('/{id}', [AlamatTokoController::class, 'update']);
+        Route::delete('/{id}', [AlamatTokoController::class, 'destroy']);
+        Route::patch('/{id}/primary', [AlamatTokoController::class, 'setPrimary']);
+    });
 
     // Purchase Management
     Route::prefix('purchases')->group(function () {
@@ -245,12 +155,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{kode}/confirm-delivery', [PembelianController::class, 'confirmDelivery']);
         Route::put('/{kode}/complete', [PembelianController::class, 'completePurchase']);
 
-        // Purchase Details Management
+        // Purchase Details
         Route::get('/{kode}/items', [DetailPembelianController::class, 'index']);
         Route::post('/{kode}/items', [DetailPembelianController::class, 'store']);
         Route::get('/{kode}/items/{id}', [DetailPembelianController::class, 'show']);
         Route::put('/{kode}/items/{id}', [DetailPembelianController::class, 'update']);
         Route::delete('/{kode}/items/{id}', [DetailPembelianController::class, 'destroy']);
+
+        // Shipping calculation
+        Route::post('/{kode}/calculate-shipping', [PembelianController::class, 'calculateShipping']);
     });
 
     // Payment Management
@@ -272,24 +185,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/buy-now', [KeranjangController::class, 'buyNow']);
     });
 
-    // Seller Order Management Routes
-    Route::middleware(['auth:sanctum', 'verified'])->prefix('seller')->group(function () {
-        // Analytics Dashboard Routes - Move this to the top for better organization
+    // Seller Order Management
+    Route::prefix('seller')->group(function () {
         Route::get('/analytics', [DashboardTokoController::class, 'getAnalytics']);
-
-        // List all orders for seller's shop
         Route::get('/orders', [PesananTokoController::class, 'index']);
-
-        // Get order statistics
         Route::get('/orders/stats', [PesananTokoController::class, 'getOrderStats']);
-
-        // Get individual order details
         Route::get('/orders/{kode}', [PesananTokoController::class, 'show']);
-
-        // Confirm receipt of the order and move to 'Diproses' status
         Route::post('/orders/{kode}/confirm', [PesananTokoController::class, 'confirmOrder']);
-
-        // Ship an order and add shipping information
         Route::post('/orders/{kode}/ship', [PesananTokoController::class, 'shipOrder']);
 
         // Seller Balance Management
@@ -318,28 +220,48 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     // Complaint Management
-    Route::middleware('auth:sanctum')->group(function () {
-        // Make sure these routes are not nested under another group
-        Route::prefix('komplain')->group(function () {
-            Route::post('/{id_pembelian}', [App\Http\Controllers\User\KomplainController::class, 'store']);
-            Route::get('/{id_pembelian}', [App\Http\Controllers\User\KomplainController::class, 'show']);
-            Route::put('/{id_komplain}', [App\Http\Controllers\User\KomplainController::class, 'update']);
-            Route::get('/user/list', [App\Http\Controllers\User\KomplainController::class, 'getByUser']);
-        });
+    Route::prefix('komplain')->group(function () {
+        Route::post('/{id_pembelian}', [App\Http\Controllers\User\KomplainController::class, 'store']);
+        Route::get('/{id_pembelian}', [App\Http\Controllers\User\KomplainController::class, 'show']);
+        Route::put('/{id_komplain}', [App\Http\Controllers\User\KomplainController::class, 'update']);
+        Route::get('/user/list', [App\Http\Controllers\User\KomplainController::class, 'getByUser']);
     });
 
-    // User Retur Routes
-    Route::middleware('auth:sanctum')->group(function () {
-        Route::prefix('retur')->group(function () {
-            Route::post('/', [App\Http\Controllers\User\ReturBarangController::class, 'store']);
-            Route::get('/{id_retur}', [App\Http\Controllers\User\ReturBarangController::class, 'show']);
-            Route::get('/user/list', [App\Http\Controllers\User\ReturBarangController::class, 'getByUser']);
-        });
+    // Retur Management
+    Route::prefix('retur')->group(function () {
+        Route::post('/', [App\Http\Controllers\User\ReturBarangController::class, 'store']);
+        Route::get('/{id_retur}', [App\Http\Controllers\User\ReturBarangController::class, 'show']);
+        Route::get('/user/list', [App\Http\Controllers\User\ReturBarangController::class, 'getByUser']);
     });
+
+    // Chat and Offers
+    Route::prefix('chat')->group(function () {
+        Route::get('/', [App\Http\Controllers\User\RuangChatController::class, 'index']);
+        Route::post('/', [App\Http\Controllers\User\RuangChatController::class, 'store']);
+        Route::get('/{id}', [App\Http\Controllers\User\RuangChatController::class, 'show']);
+        Route::put('/{id}', [App\Http\Controllers\User\RuangChatController::class, 'update']);
+        Route::delete('/{id}', [App\Http\Controllers\User\RuangChatController::class, 'destroy']);
+        Route::patch('/{id}/mark-read', [App\Http\Controllers\User\RuangChatController::class, 'markAsRead']);
+
+        // Messages
+        Route::get('/{chatRoomId}/messages', [App\Http\Controllers\User\PesanController::class, 'index']);
+        Route::post('/{chatRoomId}/messages', [App\Http\Controllers\User\PesanController::class, 'store']);
+        Route::put('/messages/{id}', [App\Http\Controllers\User\PesanController::class, 'update']);
+        Route::patch('/messages/{id}/read', [App\Http\Controllers\User\PesanController::class, 'markAsRead']);
+
+        // Offers
+        Route::post('/{roomId}/offers', [ChatOfferController::class, 'store']);
+        Route::post('/offers/{messageId}/respond', [ChatOfferController::class, 'respond']);
+        Route::get('/offers/{messageId}/check-purchase', [ChatOfferController::class, 'checkExistingPurchase']);
+        Route::post('/offers/{messageId}/purchase', [ChatOfferController::class, 'createPurchaseFromOffer']);
+    });
+
+    // Shipping calculation
+    Route::post('/shipping/calculate', [App\Http\Controllers\User\ShippingController::class, 'calculateShippingCost']);
 
     // Admin routes
     Route::middleware('role:admin,superadmin')->group(function () {
-        // User management (admin only)
+        // User management
         Route::prefix('users')->group(function () {
             Route::get('/', [UserManagementController::class, 'index']);
             Route::get('/{id}', [UserManagementController::class, 'show']);
@@ -347,7 +269,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [UserManagementController::class, 'destroy']);
         });
 
-        // Toko management (admin only)
+        // Toko management
         Route::prefix('admin/toko')->group(function () {
             Route::get('/', [TokoManagementController::class, 'index']);
             Route::get('/{id}', [TokoManagementController::class, 'show']);
@@ -357,7 +279,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{id}/restore', [TokoManagementController::class, 'restore']);
         });
 
-        // Kategori management (admin only)
+        // Kategori management
         Route::prefix('admin/kategori')->group(function () {
             Route::get('/', [KategoriController::class, 'index']);
             Route::post('/', [KategoriController::class, 'store']);
@@ -366,7 +288,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [KategoriController::class, 'destroy']);
         });
 
-        // Admin product management (admin only)
+        // Product management
         Route::prefix('admin/barang')->group(function () {
             Route::get('/', [BarangManagementController::class, 'index']);
             Route::get('/filter', [BarangManagementController::class, 'filter']);
@@ -379,7 +301,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{id}', [BarangManagementController::class, 'destroy'])->where('id', '[0-9]+');
         });
 
-        // Admin order management (admin only)
+        // Order management
         Route::prefix('admin/pesanan')->group(function () {
             Route::get('/', [PesananManagementController::class, 'index']);
             Route::get('/stats', [PesananManagementController::class, 'getOrderStats']);
@@ -388,13 +310,13 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{kode}/comment', [PesananManagementController::class, 'addComment']);
         });
 
-        // Admin seller balance management
+        // Seller balance management
         Route::prefix('admin/seller-balance')->group(function () {
-            Route::get('/', [App\Http\Controllers\User\SaldoPenjualController::class, 'getAllBalances']);
-            Route::get('/{userId}', [App\Http\Controllers\User\SaldoPenjualController::class, 'show']);
+            Route::get('/', [SaldoPenjualController::class, 'getAllBalances']);
+            Route::get('/{userId}', [SaldoPenjualController::class, 'show']);
         });
 
-        // Admin payment management (admin only)
+        // Payment management
         Route::prefix('admin/payments')->group(function () {
             Route::get('/', [PaymentManagementController::class, 'index']);
             Route::get('/stats', [PaymentManagementController::class, 'getPaymentStats']);
@@ -404,7 +326,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{kode}/verify', [PaymentManagementController::class, 'verifyManually']);
         });
 
-        // Admin complaint management
+        // Complaint management
         Route::prefix('admin/komplain')->group(function () {
             Route::get('/', [KomplainManagementController::class, 'index']);
             Route::get('/stats', [KomplainManagementController::class, 'getComplaintStats']);
@@ -413,7 +335,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id_komplain}/comment', [KomplainManagementController::class, 'addComment']);
         });
 
-        // Admin retur management
+        // Retur management
         Route::prefix('admin/retur')->group(function () {
             Route::get('/', [App\Http\Controllers\Admin\ReturBarangManagementController::class, 'index']);
             Route::get('/stats', [App\Http\Controllers\Admin\ReturBarangManagementController::class, 'getReturStats']);
@@ -421,7 +343,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{id_retur}/process', [App\Http\Controllers\Admin\ReturBarangManagementController::class, 'processRetur']);
         });
 
-        // Admin withdrawal management
+        // Withdrawal management
         Route::prefix('admin/pencairan')->group(function () {
             Route::get('/', [App\Http\Controllers\Admin\PencairanManagementController::class, 'index']);
             Route::get('/stats', [App\Http\Controllers\Admin\PencairanManagementController::class, 'getPencairanStats']);
@@ -431,122 +353,16 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/bulk-process', [App\Http\Controllers\Admin\PencairanManagementController::class, 'bulkProcess']);
         });
 
-        // Debug endpoints
-        Route::middleware('auth:sanctum')->group(function () {
-            // Debug endpoint to check purchase details directly
-            Route::get('/debug/purchases/{kode}', function ($kode) {
-                $user = auth()->user();
-
-                // Check if purchase exists
-                $purchase = \App\Models\Pembelian::where('kode_pembelian', $kode)
-                    ->where('id_pembeli', $user->id_user)
-                    ->first();
-
-                if (!$purchase) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Purchase not found'
-                    ], 404);
-                }
-
-                // Check if detail pembelian exists
-                $details = \App\Models\DetailPembelian::where('id_pembelian', $purchase->id_pembelian)
-                    ->with(['barang.gambarBarang', 'toko'])
-                    ->get();
-
-                return response()->json([
-                    'status' => 'success',
-                    'purchase' => $purchase,
-                    'details_count' => $details->count(),
-                    'details' => $details
-                ]);
-            });
-
-            // New debug endpoint to fetch purchase by ID
-            Route::get('/debug/purchases/by-id/{id}', function ($id) {
-                $user = auth()->user();
-
-                // Check if purchase exists
-                $purchase = \App\Models\Pembelian::where('id_pembelian', $id)
-                    ->where('id_pembeli', $user->id_user)
-                    ->first();
-
-                if (!$purchase) {
-                    return response()->json([
-                        'status' => 'error',
-                        'message' => 'Purchase not found'
-                    ], 404);
-                }
-
-                // Check if detail pembelian exists
-                $details = \App\Models\DetailPembelian::where('id_pembelian', $purchase->id_pembelian)
-                    ->with(['barang.gambarBarang', 'toko'])
-                    ->get();
-
-                return response()->json([
-                    'status' => 'success',
-                    'purchase' => $purchase,
-                    'details_count' => $details->count(),
-                    'details' => $details
-                ]);
-            });
-
-            // Debug routes for payment
-            Route::get('/debug/midtrans-config', [App\Http\Controllers\User\TagihanController::class, 'debugMidtransConfig']);
+        // Dashboard Analytics
+        Route::prefix('dashboard')->group(function () {
+            Route::get('/stats', [App\Http\Controllers\Admin\DashboardController::class, 'getStats']);
+            Route::get('/revenue-chart', [App\Http\Controllers\Admin\DashboardController::class, 'getRevenueChart']);
+            Route::get('/user-growth', [App\Http\Controllers\Admin\DashboardController::class, 'getUserGrowth']);
+            Route::get('/top-products', [App\Http\Controllers\Admin\DashboardController::class, 'getTopProducts']);
+            Route::get('/recent-activities', [App\Http\Controllers\Admin\DashboardController::class, 'getRecentActivities']);
+            Route::get('/order-status-distribution', [App\Http\Controllers\Admin\DashboardController::class, 'getOrderStatusDistribution']);
+            Route::get('/payment-methods', [App\Http\Controllers\Admin\DashboardController::class, 'getPaymentMethods']);
+            Route::get('/regional-data', [App\Http\Controllers\Admin\DashboardController::class, 'getRegionalData']);
         });
     });
-    // Chat and Offers Routes
-    Route::middleware('auth:sanctum')->group(function () {
-        // Chat room management
-        Route::get('/chat', [App\Http\Controllers\User\RuangChatController::class, 'index']);
-        Route::post('/chat', [App\Http\Controllers\User\RuangChatController::class, 'store']);
-        Route::get('/chat/{id}', [App\Http\Controllers\User\RuangChatController::class, 'show']);
-        Route::put('/chat/{id}', [App\Http\Controllers\User\RuangChatController::class, 'update']);
-        Route::delete('/chat/{id}', [App\Http\Controllers\User\RuangChatController::class, 'destroy']);
-        Route::patch('/chat/{id}/mark-read', [App\Http\Controllers\User\RuangChatController::class, 'markAsRead']);
-
-        // Messages within chat rooms
-        Route::get('/chat/{chatRoomId}/messages', [App\Http\Controllers\User\PesanController::class, 'index']);
-        Route::post('/chat/{chatRoomId}/messages', [App\Http\Controllers\User\PesanController::class, 'store']);
-        Route::put('/chat/messages/{id}', [App\Http\Controllers\User\PesanController::class, 'update']);
-        Route::patch('/chat/messages/{id}/read', [App\Http\Controllers\User\PesanController::class, 'markAsRead']);
-
-        // Offer routes
-        Route::post('/chat/{roomId}/offers', [ChatOfferController::class, 'store']);
-        Route::post('/chat/offers/{messageId}/respond', [ChatOfferController::class, 'respond']);
-        Route::get('/chat/offers/{messageId}/check-purchase', [ChatOfferController::class, 'checkExistingPurchase']);
-        Route::post('/chat/offers/{messageId}/purchase', [ChatOfferController::class, 'createPurchaseFromOffer']);
-    });
-});
-
-// Shipping routes
-Route::middleware(['auth:sanctum'])->group(function () {
-    Route::post('/shipping/calculate', [App\Http\Controllers\User\ShippingController::class, 'calculateShippingCost']);
-
-    // Purchase shipping calculation route
-    Route::post('/purchases/{kode}/calculate-shipping', [App\Http\Controllers\User\PembelianController::class, 'calculateShipping']);
-});
-
-// Admin Dashboard Analytics Routes
-Route::prefix('admin')->middleware(['auth:sanctum', 'role:admin,superadmin'])->group(function () {
-    Route::get('/dashboard/stats', [App\Http\Controllers\Admin\DashboardController::class, 'getStats']);
-    Route::get('/dashboard/revenue-chart', [App\Http\Controllers\Admin\DashboardController::class, 'getRevenueChart']);
-    Route::get('/dashboard/user-growth', [App\Http\Controllers\Admin\DashboardController::class, 'getUserGrowth']);
-    Route::get('/dashboard/top-products', [App\Http\Controllers\Admin\DashboardController::class, 'getTopProducts']);
-    Route::get('/dashboard/recent-activities', [App\Http\Controllers\Admin\DashboardController::class, 'getRecentActivities']);
-    Route::get('/dashboard/order-status-distribution', [App\Http\Controllers\Admin\DashboardController::class, 'getOrderStatusDistribution']);
-    Route::get('/dashboard/payment-methods', [App\Http\Controllers\Admin\DashboardController::class, 'getPaymentMethods']);
-    Route::get('/dashboard/regional-data', [App\Http\Controllers\Admin\DashboardController::class, 'getRegionalData']);
-});
-
-// Auth routes
-Route::post('register', [AuthController::class, 'register']);
-Route::post('login', [AuthController::class, 'login']);
-
-Route::middleware('auth:api')->group(function () {
-    Route::post('logout', [AuthController::class, 'logout']);
-    Route::post('refresh', [AuthController::class, 'refresh']);
-    Route::get('me', [AuthController::class, 'me']);
-
-    // Add your other protected routes here
 });
