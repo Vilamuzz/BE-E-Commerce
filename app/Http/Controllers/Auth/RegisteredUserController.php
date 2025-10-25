@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Auth;
 
-use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules;
+use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Hash;
+use App\Helpers\ApiResponse;
 
 class RegisteredUserController extends Controller
 {
@@ -28,16 +30,18 @@ class RegisteredUserController extends Controller
             'password' => Hash::make($request->password),
             'no_hp' => $request->no_hp,
             'tanggal_lahir' => $request->tanggal_lahir,
-            'role' => User::ROLE_USER, // Using constant from User model
+            'role' => User::ROLE_USER,
             'is_verified' => false,
             'is_active' => true,
             'is_deleted' => false,
         ]);
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Registration successful. Please login to continue.',
-            'data' => [
+        $token = JWTAuth::fromUser($user);
+
+        return ApiResponse::NewResponse(
+            201,
+            'Registration successful. Please login to continue.',
+            [
                 'user' => [
                     'id_user' => $user->id_user,
                     'username' => $user->username,
@@ -47,8 +51,12 @@ class RegisteredUserController extends Controller
                     'tanggal_lahir' => $user->tanggal_lahir,
                     'role' => $user->role,
                     'role_name' => $user->role_name
-                ]
-            ]
-        ], 201);
+                ],
+                'token' => $token,
+                'token_type' => 'bearer',
+                'expires_in' => config('jwt.ttl') * 60
+            ],
+
+        );
     }
 }
