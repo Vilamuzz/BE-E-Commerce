@@ -13,6 +13,7 @@
         "azishapidin/indoregion": "^3.0",
         "dedoc/scramble": "^0.12.36",
         "laravel/framework": "^12.0",
+        "laravel/octane": "^2.13",
         "laravel/reverb": "^1.0",
         "laravel/tinker": "^2.10.1",
         "midtrans/midtrans-php": "^2.6",
