@@ -1,0 +1,123 @@
+name: Build Docker & Deploy to Dokploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  GITHUB_REPO: ${{ github.repository }}
+  DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+  DOKPLOY_API_TOKEN: ${{ secrets.DOKPLOY_API_TOKEN }}
+  DOKPLOY_APP_ID: ${{ secrets.DOKPLOY_APP_ID }}
+  DOKPLOY_WEBHOOK_URL: ${{ secrets.DOKPLOY_WEBHOOK_URL }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image-name: ${{ steps.image.outputs.name }}
+      image-tag: ${{ steps.imagetag.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name for GHCR
+        id: image
+        run: |
+          REPO_NAME=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_NAME="ghcr.io/${OWNER}/${REPO_NAME}"
+          echo "name=${IMAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set image tag
+        id: imagetag
+        run: |
+          BRANCH_NAME=$(echo "${{ github.ref_name }}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g')
+          IMAGE_TAG="${BRANCH_NAME}-${{ github.sha }}"
+          echo "tag=${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=${{ steps.imagetag.outputs.tag }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Validate image name
+        run: |
+          if [ -z "${{ steps.image.outputs.name }}" ]; then
+            echo "❌ Image name is empty."
+            exit 1
+          fi
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update Dokploy application image
+        run: |
+          IMAGE_FULL="${{ needs.build.outputs.image-name }}:${{ needs.build.outputs.image-tag }}"
+          
+          echo "Updating Dokploy application with image: $IMAGE_FULL"
+          echo "App ID: ${{ env.DOKPLOY_APP_ID }}"
+          
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ env.DOKPLOY_URL }}/api/application.update" \
+            -H 'accept: application/json' \
+            -H 'Content-Type: application/json' \
+            -H "x-api-key: ${{ env.DOKPLOY_API_TOKEN }}" \
+            -d "{
+              \"applicationId\": \"${{ env.DOKPLOY_APP_ID }}\",
+              \"dockerImage\": \"$IMAGE_FULL\"
+            }")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "Response: $BODY"
+          echo "HTTP Code: $HTTP_CODE"
+          
+          if [ "$HTTP_CODE" -eq 200 ] || [ "$HTTP_CODE" -eq 201 ]; then
+            echo "✅ Image updated successfully"
+          else
+            echo "❌ Failed to update image"
+            exit 1
+          fi
+
+      - name: Trigger deployment webhook
+        run: |
+          echo "Triggering deployment webhook..."
+          
+          curl -X POST "${{ env.DOKPLOY_WEBHOOK_URL }}" \
+            --fail --show-error --silent --output /dev/null && echo "✅ Deployment webhook triggered successfully" || echo "❌ Deployment webhook failed"
+          
+          echo "Deployed commit: ${{ github.sha }}"
+          echo "Deployed by: ${{ github.actor }}"
