@@ -25,8 +25,8 @@ WORKDIR /var/www
 # Copy composer files and artisan file
 COPY composer.json composer.lock artisan ./
 
-# Create Laravel's basic directory structure
-RUN mkdir -p bootstrap/cache storage/app storage/framework/cache/data \
+# Create Laravel's basic directory structure (added storage/app/public for storage:link at runtime)
+RUN mkdir -p bootstrap/cache storage/app storage/app/public storage/framework/cache/data \
     storage/framework/sessions storage/framework/views storage/logs
 
 # Install Composer dependencies (without post-scripts)
@@ -38,26 +38,10 @@ COPY . .
 # Run Composer post-scripts (skip during build to avoid env-dependent initialization)
 RUN composer dump-autoload --optimize --no-scripts
 
-# Laravel config cache (to be done at runtime, not during build)
-RUN php artisan config:clear \
- && php artisan route:clear \
- && php artisan view:clear \
- && php artisan storage:link
-
 # File permissions
 RUN chown -R www-data:www-data /var/www \
  && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 EXPOSE 9000
-
-# Startup script
-RUN echo '#!/bin/bash\n\
-# Cache configurations after environment variables are loaded\n\
-php artisan config:cache\n\
-php artisan route:cache\n\
-php artisan view:cache\n\
-# Start the server\n\
-exec php artisan octane:start --server=swoole --host=0.0.0.0 --port=9000\n\
-' > /start.sh && chmod +x /start.sh
 
 CMD ["sh", "-c", "echo 'APP_KEY:' $APP_KEY && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan storage:link && php artisan octane:start --server=swoole --host=0.0.0.0 --port=9000"]
