@@ -35,9 +35,8 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-di
 # Copy the rest of the project files
 COPY . .
 
-# Run Composer post-scripts
-RUN composer dump-autoload --optimize
-
+# Run Composer post-scripts (skip during build to avoid env-dependent initialization)
+RUN composer dump-autoload --optimize --no-scripts
 
 # Laravel config cache (to be done at runtime, not during build)
 RUN php artisan config:clear \
