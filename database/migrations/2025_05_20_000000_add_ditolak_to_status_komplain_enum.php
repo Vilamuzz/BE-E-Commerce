@@ -12,8 +12,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Modify the enum values of status_komplain column
-        DB::statement("ALTER TABLE komplain MODIFY COLUMN status_komplain ENUM('Menunggu', 'Diproses', 'Selesai', 'Ditolak')");
+        // PostgreSQL compatible syntax
+        DB::statement("ALTER TABLE komplain DROP CONSTRAINT IF EXISTS komplain_status_komplain_check");
+        DB::statement("
+            ALTER TABLE komplain 
+            ADD CONSTRAINT komplain_status_komplain_check 
+            CHECK (status_komplain IN ('Menunggu', 'Diproses', 'Selesai', 'Ditolak'))
+        ");
     }
 
     /**
@@ -21,7 +26,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        // Revert back to original enum values
-        DB::statement("ALTER TABLE komplain MODIFY COLUMN status_komplain ENUM('Menunggu', 'Diproses', 'Selesai')");
+        DB::statement("ALTER TABLE komplain DROP CONSTRAINT IF EXISTS komplain_status_komplain_check");
+        DB::statement("
+            ALTER TABLE komplain 
+            ADD CONSTRAINT komplain_status_komplain_check 
+            CHECK (status_komplain IN ('Menunggu', 'Diproses', 'Selesai'))
+        ");
     }
 };
