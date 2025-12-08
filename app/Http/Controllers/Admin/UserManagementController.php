@@ -51,7 +51,7 @@ class UserManagementController extends Controller
                 'password' => 'required|string|min:8',
                 'no_hp' => 'nullable|string|max:15',
                 'tanggal_lahir' => 'nullable|date',
-                'role' => 'required|integer|in:0,1,2',
+                'role' => 'required|integer|in:0,1,2,3',  // Updated to include 3 (support)
                 'is_verified' => 'boolean',
                 'is_active' => 'boolean',
             ]);
@@ -144,7 +144,7 @@ class UserManagementController extends Controller
                 'password' => 'sometimes|required|string|min:8',
                 'no_hp' => 'nullable|string|max:15',
                 'tanggal_lahir' => 'nullable|date',
-                'role' => 'sometimes|required|integer|in:0,1,2',
+                'role' => 'sometimes|required|integer|in:0,1,2,3',  // Updated to include 3 (support)
                 'is_verified' => 'sometimes|boolean',
                 'is_active' => 'sometimes|boolean',
             ]);

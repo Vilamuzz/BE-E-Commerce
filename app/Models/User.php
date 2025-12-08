@@ -15,12 +15,14 @@ class User extends Authenticatable implements JWTSubject
     const ROLE_SUPERADMIN = 0;
     const ROLE_ADMIN = 1;
     const ROLE_USER = 2;
+    const ROLE_SUPPORT = 3;  // Add this line
 
     // Define role names mapping
     public static $roles = [
         self::ROLE_SUPERADMIN => 'superadmin',
         self::ROLE_ADMIN => 'admin',
         self::ROLE_USER => 'user',
+        self::ROLE_SUPPORT => 'support',  // Add this line
     ];
 
     protected $primaryKey = 'id_user';
