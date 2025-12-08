@@ -264,6 +264,7 @@ Route::middleware('auth:api')->group(function () {
         // User management
         Route::prefix('users')->group(function () {
             Route::get('/', [UserManagementController::class, 'index']);
+            Route::post('/', [UserManagementController::class, 'store']);  // Add this line
             Route::get('/{id}', [UserManagementController::class, 'show']);
             Route::put('/{id}', [UserManagementController::class, 'update']);
             Route::delete('/{id}', [UserManagementController::class, 'destroy']);
